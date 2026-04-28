@@ -1,2 +1,13 @@
 *.o
+*.a
+*.so
+*.dylib
 test
+test_ooc
+*_demo
+demo
+bin/
+obj/
+*.swp
+*.swo
+*~
