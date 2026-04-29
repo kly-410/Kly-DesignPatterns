@@ -29,6 +29,9 @@
  * 读取存档 = 从 Memento 恢复到 Originator
  * ============================================================================*/
 
+/** 前向声明（解决 Game 引用自身的函数指针类型）*/
+typedef struct _Game Game;
+
 /** 游戏状态（Memento：备忘录对象）*/
 typedef struct {
     int level;   /**< 当前关卡 */
@@ -37,15 +40,15 @@ typedef struct {
 } GameState;
 
 /** 游戏（Originator：发起者）*/
-typedef struct {
+struct _Game {
     GameState state;  /**< 当前状态 */
 
     /** 创建备忘录：保存当前状态（深拷贝）*/
-    GameState* (*save)(struct _Game*);
+    GameState* (*save)(Game*);
 
     /** 恢复状态：从备忘录恢复 */
-    void (*restore)(struct _Game*, GameState*);
-} Game;
+    void (*restore)(Game*, GameState*);
+};
 
 /**
  * 保存游戏状态
@@ -92,6 +95,9 @@ static SaveManager* SaveManager_new(void) {
  *       如果修改后链路异常，可以快速恢复到之前的状态
  * ============================================================================*/
 
+/** 前向声明（解决 PCIeDevice 引用自身的函数指针类型）*/
+typedef struct _PCIeDevice PCIeDevice;
+
 /** PCIe 设备配置快照（Memento）*/
 typedef struct {
     uint32_t bar0;       /**< BAR0 地址 */
@@ -100,17 +106,17 @@ typedef struct {
 } PCIConfigSnapshot;
 
 /** PCIe 设备（Originator）*/
-typedef struct {
+struct _PCIeDevice {
     uint32_t bar0;
     uint32_t bar1;
     uint8_t irq_line;
 
     /** 创建配置快照 */
-    PCIConfigSnapshot* (*createSnapshot)(struct _PCIeDevice*);
+    PCIConfigSnapshot* (*createSnapshot)(PCIeDevice*);
 
     /** 从快照恢复配置 */
-    void (*restoreSnapshot)(struct _PCIeDevice*, PCIConfigSnapshot*);
-} PCIeDevice;
+    void (*restoreSnapshot)(PCIeDevice*, PCIConfigSnapshot*);
+};
 
 /** 保存当前配置到快照 */
 static PCIConfigSnapshot* PCIeDevice_createSnapshot(PCIeDevice* dev) {

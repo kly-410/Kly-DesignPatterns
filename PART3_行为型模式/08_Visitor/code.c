@@ -89,7 +89,7 @@ static void DumpVisitor_visit(PCIeReg* reg, void* ctx) {
  * foreach_register 是"对象结构"的管理函数
  * 它遍历所有元素，调用每个元素的 accept 方法
  */
-static void DumpVisitor_apply(PCIeReg** regs, int count) {
+__attribute__((unused)) static void DumpVisitor_apply(PCIeReg** regs, int count) {
     printf("  === DumpVisitor: 打印所有寄存器 ===\n");
     for (int i = 0; i < count; i++) {
         regs[i]->accept(regs[i], NULL);  /**< NULL = DumpVisitor */
@@ -128,7 +128,7 @@ static void ValidateVisitor_visit(PCIeReg* reg, void* ctx) {
     }
 }
 
-static void ValidateVisitor_apply(PCIeReg** regs, int count) {
+__attribute__((unused)) static void ValidateVisitor_apply(PCIeReg** regs, int count) {
     printf("  === ValidateVisitor: 验证配置 ===\n");
     for (int i = 0; i < count; i++) {
         regs[i]->accept(regs[i], NULL);
@@ -142,18 +142,18 @@ static void ValidateVisitor_apply(PCIeReg** regs, int count) {
  * accept 调用对应访问者的 visit 函数
  * ============================================================================*/
 
-static void VendorID_accept(PCIeReg* reg, void* ctx) {
+__attribute__((unused)) static void VendorID_accept(PCIeReg* reg, void* ctx) {
     (void)ctx;
     /**< 这里直接调用函数指针，通过 extern 变量选择具体访问者 */
     DumpVisitor_visit(reg, NULL);  /**< 简化：直接调用 */
 }
 
-static void BAR_accept(PCIeReg* reg, void* ctx) {
+__attribute__((unused)) static void BAR_accept(PCIeReg* reg, void* ctx) {
     (void)ctx;
     DumpVisitor_visit(reg, NULL);
 }
 
-static void Command_accept(PCIeReg* reg, void* ctx) {
+__attribute__((unused)) static void Command_accept(PCIeReg* reg, void* ctx) {
     (void)ctx;
     DumpVisitor_visit(reg, NULL);
 }

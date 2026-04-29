@@ -128,11 +128,13 @@ static ReqResult PCIeHandler_process(PCIeHandler* h, PCIeConfigRequest* req) {
 
 /* 三个具体处理器：地址检查 → 权限检查 → 实际操作 */
 static ReqResult range_check_handler(PCIeHandler* base, PCIeConfigRequest* req) {
+    (void)base;  /// 抑制未使用参数警告
     if (req->offset > 0xFF) return REQ_ERR_RANGE;  /**< 配置空间最大 256 字节 */
     return REQ_OK;  /**< 检查通过，继续下一个处理器 */
 }
 
 static ReqResult permission_check_handler(PCIeHandler* base, PCIeConfigRequest* req) {
+    (void)base;  /// 抑制未使用参数警告
     if (req->is_write && req->offset == 0x04) {
         printf("    [PermCheck] BAR 寄存器禁止写入！\n");
         return REQ_ERR_PERM;
@@ -141,6 +143,7 @@ static ReqResult permission_check_handler(PCIeHandler* base, PCIeConfigRequest* 
 }
 
 static ReqResult read_write_handler(PCIeHandler* base, PCIeConfigRequest* req) {
+    (void)base;  /// 抑制未使用参数警告
     static uint32_t config_space[16] = {0};  /**< 模拟配置空间寄存器 */
     if (req->is_write) {
         config_space[req->offset / 4] = req->value;

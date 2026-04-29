@@ -30,21 +30,31 @@ struct _PixelTransfer {
 // STM32 SPI 传输实现
 static void stm32_send_pixels(PixelTransfer* t, const void* px, size_t len)
 {
+    (void)t;
+    (void)px;
+    (void)len;
     printf("    [STM32 SPI] DMA tx: %zu bytes\n", len);
 }
 
 static void stm32_set_window(PixelTransfer* t, int x, int y, int w, int h)
 {
+    (void)t;
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
     printf("    [STM32 SPI] setWindow(%d,%d %dx%d)\n", x, y, w, h);
 }
 
 static void stm32_flush(PixelTransfer* t)
 {
+    (void)t;
     printf("    [STM32 SPI] flush\n");
 }
 
 static void stm32_close(PixelTransfer* t)
 {
+    (void)t;
     printf("    [STM32 SPI] closed\n");
     free(t);
 }
@@ -63,21 +73,31 @@ PixelTransfer* new_STM32PixelTransfer(void)
 // ESP32 SPI 传输实现
 static void esp32_send_pixels(PixelTransfer* t, const void* px, size_t len)
 {
+    (void)t;
+    (void)px;
+    (void)len;
     printf("    [ESP32 SPI] RMT tx: %zu bytes\n", len);
 }
 
 static void esp32_set_window(PixelTransfer* t, int x, int y, int w, int h)
 {
+    (void)t;
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
     printf("    [ESP32 SPI] setWindow(%d,%d %dx%d)\n", x, y, w, h);
 }
 
 static void esp32_flush(PixelTransfer* t)
 {
+    (void)t;
     printf("    [ESP32 SPI] flush\n");
 }
 
 static void esp32_close(PixelTransfer* t)
 {
+    (void)t;
     printf("    [ESP32 SPI] closed\n");
     free(t);
 }
@@ -114,6 +134,12 @@ struct _GraphicsDevice {
 // 内部实现：画矩形
 static void gd_drawRect(GraphicsDevice* gd, int x, int y, int w, int h, int color)
 {
+    (void)gd;
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
+    (void)color;
     printf("  [GraphicsDevice %s] drawRect(%d,%d %dx%d) color=0x%X\n",
            gd->name, x, y, w, h, color);
     
@@ -127,6 +153,12 @@ static void gd_drawRect(GraphicsDevice* gd, int x, int y, int w, int h, int colo
 // 内部实现：画线（Bresenham简化版）
 static void gd_drawLine(GraphicsDevice* gd, int x1, int y1, int x2, int y2, int color)
 {
+    (void)gd;
+    (void)x1;
+    (void)y1;
+    (void)x2;
+    (void)y2;
+    (void)color;
     printf("  [GraphicsDevice %s] drawLine(%d,%d)->(%d,%d) color=0x%X\n",
            gd->name, x1, y1, x2, y2, color);
     // 简化：这里不实际画像素，只是打印信息
@@ -135,6 +167,8 @@ static void gd_drawLine(GraphicsDevice* gd, int x1, int y1, int x2, int y2, int 
 // 内部实现：填充全屏
 static void gd_fillScreen(GraphicsDevice* gd, int color)
 {
+    (void)gd;
+    (void)color;
     printf("  [GraphicsDevice %s] fillScreen(0x%X)\n", gd->name, color);
     gd->transfer->setWindow(gd->transfer, 0, 0, gd->width, gd->height);
     gd->transfer->flush(gd->transfer);
@@ -142,6 +176,7 @@ static void gd_fillScreen(GraphicsDevice* gd, int color)
 
 static void gd_close(GraphicsDevice* gd)
 {
+    (void)gd;
     printf("  [GraphicsDevice %s] closed\n", gd->name);
     gd->transfer->close(gd->transfer);
     free(gd);

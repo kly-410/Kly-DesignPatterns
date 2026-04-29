@@ -40,6 +40,9 @@ struct _PCIeDevice {
 // PCIe 设备寄存器写入（模拟）
 static void pcie_write_reg(PCIeDevice* dev, int offset, int value)
 {
+    (void)dev;
+    (void)offset;
+    (void)value;
     printf("  [PCIe %s] WRITE reg@0x%02X <- 0x%X\n", 
            dev->name, offset, value);
 }
@@ -47,6 +50,8 @@ static void pcie_write_reg(PCIeDevice* dev, int offset, int value)
 // PCIe 设备寄存器读取（模拟）
 static int pcie_read_reg(PCIeDevice* dev, int offset)
 {
+    (void)dev;
+    (void)offset;
     printf("  [PCIe %s] READ  reg@0x%02X -> 0xDEAD\n", dev->name, offset);
     return 0xDEAD;
 }
@@ -77,10 +82,13 @@ typedef struct _PCIeToUSBAdapter {
 // 适配器写入：把 IOHandler 的 send 适配成 PCIe 的 write_reg
 static void adapter_send(IOHandler* h, const void* data, size_t len)
 {
+    (void)h;
+    (void)data;
+    (void)len;
     PCIeToUSBAdapter* ad = (PCIeToUSBAdapter*)h;
     
     // 累积到缓冲区（这里简化，实际会做协议封装）
-    int copy_len = (len < 64 - ad->tx_len) ? len : 64 - ad->tx_len;
+    size_t copy_len = (len < (size_t)64 - (size_t)ad->tx_len) ? len : (size_t)64 - (size_t)ad->tx_len;
     memcpy(ad->tx_buffer + ad->tx_len, data, copy_len);
     ad->tx_len += copy_len;
     
@@ -94,6 +102,9 @@ static void adapter_send(IOHandler* h, const void* data, size_t len)
 // 适配器读取：把 PCIe 的 read_reg 适配成 IOHandler 的 recv
 static void adapter_recv(IOHandler* h, void* buf, size_t len)
 {
+    (void)h;
+    (void)buf;
+    (void)len;
     PCIeToUSBAdapter* ad = (PCIeToUSBAdapter*)h;
     
     int val = ad->pcie_dev->read_reg(ad->pcie_dev, 0x14);
@@ -104,6 +115,7 @@ static void adapter_recv(IOHandler* h, void* buf, size_t len)
 
 static void adapter_close(IOHandler* h)
 {
+    (void)h;
     PCIeToUSBAdapter* ad = (PCIeToUSBAdapter*)h;
     free(ad->pcie_dev);
     free(ad);
@@ -133,11 +145,14 @@ struct _LegacySerialDevice {
 // 老式串口设备
 static void serial_send_byte(LegacySerialDevice* dev, char c)
 {
+    (void)dev;
+    (void)c;
     printf("  [Legacy Serial] TX byte: 0x%02X ('%c')\n", c, c);
 }
 
 static char serial_recv_byte(LegacySerialDevice* dev)
 {
+    (void)dev;
     printf("  [Legacy Serial] RX byte: waiting...\n");
     return 'K';
 }
@@ -159,6 +174,9 @@ typedef struct _SerialToIOAdapter {
 // 适配器 send：把 IOHandler 的 send 适配成 LegacySerial 的 send_byte
 static void serial_adapter_send(IOHandler* h, const void* data, size_t len)
 {
+    (void)h;
+    (void)data;
+    (void)len;
     SerialToIOAdapter* ad = (SerialToIOAdapter*)h;
     const char* str = (const char*)data;
     
@@ -171,12 +189,16 @@ static void serial_adapter_send(IOHandler* h, const void* data, size_t len)
 
 static void serial_adapter_recv(IOHandler* h, void* buf, size_t len)
 {
+    (void)h;
+    (void)buf;
+    (void)len;
     SerialToIOAdapter* ad = (SerialToIOAdapter*)h;
     *(char*)buf = ad->serial.recv_byte(&ad->serial);
 }
 
 static void serial_adapter_close(IOHandler* h)
 {
+    (void)h;
     free(h);
     printf("[SerialAdapter] closed\n");
 }
