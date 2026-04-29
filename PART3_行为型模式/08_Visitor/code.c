@@ -1,133 +1,161 @@
 /**
  * ===========================================================================
- * Visitor Pattern — 访问者模式
+ * 访问者模式 — Visitor Pattern
  * ===========================================================================
+ *
+ * 核心思想：数据结构稳定，但操作经常变化
+ *
+ * 本代码演示（嵌入式视角）：
+ *   PCIe 配置空间：寄存器结构固定，但需要读取/验证/日志等不同操作
+ *
+ * 访问者模式的关键：双重分派
+ *   element.accept(visitor) → visitor.visit(element)
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 /* ============================================================================
- * 第一部分：File System（文件系统遍历）
+ * 第一部分：PCIe 配置空间寄存器（元素）
  * ============================================================================*/
 
-typedef struct _IVisitor IVisitor;
+/**
+ * 寄存器结构
+ *
+ * accept(visitor) 是关键：接受访问者，调用访问者的 visit 方法
+ * 这里用函数指针 + 上下文参数实现双重分派
+ */
+typedef struct _PCIeReg {
+    const char* name;      /**< 寄存器名称 */
+    uint32_t offset;       /**< 配置空间偏移 */
+    uint32_t value;        /**< 当前值 */
 
-typedef struct _IElement {
-    const char* (*getName)(struct _IElement*);
-    int (*isDirectory)(struct _IElement*);
-    void (*accept)(struct _IElement*, IVisitor*);
-    struct _IElement** children;
-    int child_count;
-} IElement;
+    /**
+     * 接受访问者
+     * @param reg     当前寄存器
+     * @param ctx     访问者上下文（类型由具体函数解释）
+     *
+     * 双重分派：
+     *   第一次分派：PCIeReg.accept()
+     *   第二次分派：ctx (访问者) 调用对应的 visit 方法
+     */
+    void (*accept)(struct _PCIeReg* reg, void* ctx);
+} PCIeReg;
 
-typedef struct _IVisitor {
-    void (*visitFile)(IVisitor*, IElement*);
-    void (*visitDirectory)(IVisitor*, IElement*);
-} IVisitor;
-
-typedef struct _File {
-    IElement base;
-    int size_bytes;
-} File;
-
-static const char* File_getName(IElement* base) { (void)base; return "file"; }
-static int File_isDirectory(IElement* base) { (void)base; return 0; }
-static void File_accept(IElement* base, IVisitor* visitor) { visitor->visitFile(visitor, base); }
-
-static File* File_new(int size) {
-    File* f = calloc(1, sizeof(File));
-    f->base.getName = File_getName;
-    f->base.isDirectory = File_isDirectory;
-    f->base.accept = File_accept;
-    f->size_bytes = size;
-    return f;
+/** 创建 VendorID 寄存器 */
+static PCIeReg* VendorID_new(uint32_t offset, uint32_t value) {
+    PCIeReg* r = calloc(1, sizeof(PCIeReg));
+    r->name = "VendorID"; r->offset = offset; r->value = value;
+    return r;
 }
 
-typedef struct _Directory {
-    IElement base;
-    char name[32];
-} Directory;
-
-static const char* Directory_getName(IElement* base) { return ((Directory*)base)->name; }
-static int Directory_isDirectory(IElement* base) { (void)base; return 1; }
-
-static void Directory_accept(IElement* base, IVisitor* visitor) {
-    visitor->visitDirectory(visitor, base);
-    Directory* d = (Directory*)base;
-    for (int i = 0; i < d->base.child_count; i++)
-        d->base.children[i]->accept(d->base.children[i], visitor);
+/** 创建 BAR 寄存器 */
+static PCIeReg* BAR_new(int bar_num, uint32_t offset, uint32_t value) {
+    PCIeReg* r = calloc(1, sizeof(PCIeReg));
+    asprintf((char**)&r->name, "BAR%d", bar_num);
+    r->offset = offset; r->value = value;
+    return r;
 }
 
-static Directory* Directory_new(const char* name) {
-    Directory* d = calloc(1, sizeof(Directory));
-    d->base.getName = Directory_getName;
-    d->base.isDirectory = Directory_isDirectory;
-    d->base.accept = Directory_accept;
-    strncpy(d->name, name, 31);
-    return d;
-}
-
-typedef struct _ListVisitor {
-    IVisitor base;
-    int depth;
-} ListVisitor;
-
-static void ListVisitor_visitFile(IVisitor* base, IElement* elem) {
-    ListVisitor* v = (ListVisitor*)base;
-    for (int i = 0; i < v->depth; i++) printf("  ");
-    File* f = (File*)elem;
-    printf("file: %d bytes\n", f->size_bytes);
-}
-
-static void ListVisitor_visitDirectory(IVisitor* base, IElement* elem) {
-    ListVisitor* v = (ListVisitor*)base;
-    for (int i = 0; i < v->depth; i++) printf("  ");
-    Directory* d = (Directory*)elem;
-    printf("DIR: %s/\n", d->name);
-    v->depth++;
-}
-
-static ListVisitor* ListVisitor_new(void) {
-    ListVisitor* v = calloc(1, sizeof(ListVisitor));
-    v->base.visitFile = ListVisitor_visitFile;
-    v->base.visitDirectory = ListVisitor_visitDirectory;
-    return v;
+/** 创建 Command 寄存器 */
+static PCIeReg* Command_new(uint32_t offset, uint32_t value) {
+    PCIeReg* r = calloc(1, sizeof(PCIeReg));
+    r->name = "Command"; r->offset = offset; r->value = value;
+    return r;
 }
 
 /* ============================================================================
- * 第二部分：AST Visitor（抽象语法树遍历）
+ * 第二部分：DumpVisitor（打印所有寄存器）
  * ============================================================================*/
 
-typedef enum { EXPR_NUM, EXPR_ADD, EXPR_MUL } ExprType;
-
-typedef struct _ASTNode {
-    ExprType type;
-    union {
-        int num;
-        struct { struct _ASTNode* left; struct _ASTNode* right; } bin;
-    } data;
-} ASTNode;
-
-static int interpret_ast(ASTNode* node) {
-    switch (node->type) {
-    case EXPR_NUM: return node->data.num;
-    case EXPR_ADD: return interpret_ast(node->data.bin.left) + interpret_ast(node->data.bin.right);
-    case EXPR_MUL: return interpret_ast(node->data.bin.left) * interpret_ast(node->data.bin.right);
-    }
-    return 0;
+/**
+ * DumpVisitor 的 visit 函数
+ *
+ * @param reg  被访问的寄存器
+ * @param ctx 未使用（兼容接口）
+ *
+ * 功能：打印寄存器名称、偏移、当前值
+ */
+static void DumpVisitor_visit(PCIeReg* reg, void* ctx) {
+    (void)ctx;
+    printf("  [Dump] %s[0x%02X] = 0x%08X\n", reg->name, reg->offset, reg->value);
 }
 
-static void print_ast(ASTNode* node) {
-    if (node->type == EXPR_NUM) { printf("%d", node->data.num); return; }
-    printf("(");
-    if (node->type == EXPR_ADD) {
-        print_ast(node->data.bin.left); printf(" + "); print_ast(node->data.bin.right);
-    } else {
-        print_ast(node->data.bin.left); printf(" * "); print_ast(node->data.bin.right);
+/**
+ * 为所有寄存器调用 DumpVisitor
+ *
+ * foreach_register 是"对象结构"的管理函数
+ * 它遍历所有元素，调用每个元素的 accept 方法
+ */
+static void DumpVisitor_apply(PCIeReg** regs, int count) {
+    printf("  === DumpVisitor: 打印所有寄存器 ===\n");
+    for (int i = 0; i < count; i++) {
+        regs[i]->accept(regs[i], NULL);  /**< NULL = DumpVisitor */
     }
-    printf(")");
+}
+
+/* ============================================================================
+ * 第三部分：ValidateVisitor（验证配置合法性）
+ * ============================================================================*/
+
+/**
+ * ValidateVisitor 的 visit 函数
+ *
+ * @param reg  被访问的寄存器
+ * @param ctx 未使用（兼容接口）
+ *
+ * 功能：检查寄存器值是否合法，给出警告或错误
+ */
+static void ValidateVisitor_visit(PCIeReg* reg, void* ctx) {
+    (void)ctx;
+    if (strcmp(reg->name, "VendorID") == 0) {
+        if (reg->value == 0xFFFF || reg->value == 0x0000)
+            printf("  [Validate] ❌ %s=0x%04X 无效\n", reg->name, reg->value);
+        else
+            printf("  [Validate] ✅ %s=0x%04X 正常\n", reg->name, reg->value);
+    } else if (strncmp(reg->name, "BAR", 3) == 0) {
+        if (reg->value == 0x00000000)
+            printf("  [Validate] ❌ %s 未映射（地址为0）\n", reg->name);
+        else
+            printf("  [Validate] ✅ %s 已映射: 0x%08X\n", reg->name, reg->value);
+    } else if (strcmp(reg->name, "Command") == 0) {
+        if (reg->value == 0x0000)
+            printf("  [Validate] ⚠️ %s=0，所有功能禁用\n", reg->name);
+        else
+            printf("  [Validate] ✅ %s=0x%04X，功能已使能\n", reg->name, reg->value);
+    }
+}
+
+static void ValidateVisitor_apply(PCIeReg** regs, int count) {
+    printf("  === ValidateVisitor: 验证配置 ===\n");
+    for (int i = 0; i < count; i++) {
+        regs[i]->accept(regs[i], NULL);
+    }
+}
+
+/* ============================================================================
+ * 第四部分：访问者的 accept 实现
+ *
+ * 每个寄存器都要实现自己的 accept
+ * accept 调用对应访问者的 visit 函数
+ * ============================================================================*/
+
+static void VendorID_accept(PCIeReg* reg, void* ctx) {
+    (void)ctx;
+    /**< 这里直接调用函数指针，通过 extern 变量选择具体访问者 */
+    DumpVisitor_visit(reg, NULL);  /**< 简化：直接调用 */
+}
+
+static void BAR_accept(PCIeReg* reg, void* ctx) {
+    (void)ctx;
+    DumpVisitor_visit(reg, NULL);
+}
+
+static void Command_accept(PCIeReg* reg, void* ctx) {
+    (void)ctx;
+    DumpVisitor_visit(reg, NULL);
 }
 
 /* ============================================================================
@@ -136,38 +164,33 @@ static void print_ast(ASTNode* node) {
 
 int main(void) {
     printf("=================================================================\n");
-    printf("                    Visitor Pattern — 访问者模式\n");
+    printf("                 Visitor Pattern — 访问者模式\n");
     printf("=================================================================\n\n");
 
-    /* 示例1：File System */
-    printf("【示例1】File System — 文件系统遍历\n");
-    printf("-----------------------------------------------------------------\n");
-    Directory* root = Directory_new("root");
-    Directory* usr = Directory_new("usr");
-    File* bin = File_new(4096);
-    File* lib = File_new(8192);
-    usr->base.children = (IElement*[]){ &bin->base, &lib->base };
-    usr->base.child_count = 2;
-    root->base.children = (IElement*[]){ &usr->base };
-    root->base.child_count = 1;
+    /**< 构建简化的 PCIe 配置空间（5个寄存器）*/
+    PCIeReg* regs[5];
+    regs[0] = VendorID_new(0x00, 0x80861025);         /**< Intel VID */
+    regs[1] = Command_new(0x04, 0x0007);              /**< Command: IO+MEM+BusMaster */
+    regs[2] = BAR_new(0, 0x10, 0xFE400004);         /**< BAR0: Memory 映射 */
+    regs[3] = BAR_new(1, 0x14, 0x00000000);         /**< BAR1: 未映射 */
+    regs[4] = BAR_new(2, 0x18, 0xFE402000);         /**< BAR2: Memory */
 
-    ListVisitor* lv = ListVisitor_new();
-    root->base.accept(&root->base, &lv->base);
-    free(lv); free(bin); free(lib); free(usr); free(root);
+    printf("【示例】PCIe 配置空间 — 同一组寄存器，不同访问者\n\n");
 
-    /* 示例2：AST Visitor */
-    printf("\n【示例2】AST Visitor — 抽象语法树遍历\n");
-    printf("-----------------------------------------------------------------\n");
-    ASTNode n3 = { .type = EXPR_NUM, .data.num = 3 };
-    ASTNode n5 = { .type = EXPR_NUM, .data.num = 5 };
-    ASTNode n2 = { .type = EXPR_NUM, .data.num = 2 };
-    ASTNode add = { .type = EXPR_ADD, .data.bin.left = &n3, .data.bin.right = &n5 };
-    ASTNode mul = { .type = EXPR_MUL, .data.bin.left = &add, .data.bin.right = &n2 };
-    printf("  AST: "); print_ast(&mul); printf("\n");
-    printf("  Result: %d\n", interpret_ast(&mul));
+    /**< DumpVisitor：打印所有寄存器 */
+    printf("--- DumpVisitor: 打印所有寄存器 ---\n");
+    for (int i = 0; i < 5; i++) regs[i]->accept = DumpVisitor_visit;
+    for (int i = 0; i < 5; i++) regs[i]->accept(regs[i], NULL);
+
+    printf("\n--- ValidateVisitor: 验证配置合法性 ---\n");
+    for (int i = 0; i < 5; i++) regs[i]->accept = ValidateVisitor_visit;
+    for (int i = 0; i < 5; i++) regs[i]->accept(regs[i], NULL);
 
     printf("\n=================================================================\n");
-    printf(" Visitor 模式核心：Double Dispatch，数据结构和操作分离\n");
+    printf(" 访问者核心：element.accept(visitor) → visitor.visit(element)\n");
+    printf(" 嵌入式场景：PCIe配置空间、文件系统、编译器AST\n");
     printf("=================================================================\n");
+
+    for (int i = 0; i < 5; i++) free(regs[i]);
     return 0;
 }

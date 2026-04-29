@@ -1,7 +1,14 @@
 /**
  * ===========================================================================
- * Chain of Responsibility Pattern — 责任链模式
+ * 责任链模式 — Chain of Responsibility Pattern
  * ===========================================================================
+ *
+ * 核心思想：请求沿着处理器链传递，直到某个处理器处理它
+ *
+ * 本代码演示（嵌入式视角）：
+ * 1. 日志处理：DEBUG → INFO → WARNING → ERROR，匹配则处理
+ * 2. 中断处理：多个处理器按优先级依次尝试处理
+ * 3. 请求拦截：权限校验 → 参数验证 → 业务处理（层层拦截）
  */
 
 #include <stdio.h>
@@ -10,140 +17,139 @@
 #include <stdint.h>
 
 /* ============================================================================
- * 第一部分：Help System（帮助系统）
+ * 第一部分：日志处理器链
+ *
+ * 场景：固件日志系统，不同级别的日志发给不同的处理程序
+ *       DEBUG 级别只需要打印
+ *       ERROR 级别需要记录到 Flash + 上报服务器
  * ============================================================================*/
 
-typedef enum { LEVEL_1 = 1, LEVEL_2 = 2, LEVEL_3 = 3 } IssueLevel;
+/** 日志级别枚举：值越大等级越高 */
+typedef enum {
+    LOG_DEBUG = 1,   /**< 调试信息 */
+    LOG_INFO  = 2,   /**< 一般信息 */
+    LOG_WARN  = 3,   /**< 警告 */
+    LOG_ERROR = 4,   /**< 错误 */
+    LOG_FATAL = 5    /**< 致命错误 */
+} LogLevel;
 
-typedef struct _HelpHandler {
-    int level;
-    const char* name;
-    struct _HelpHandler* next;
-    int (*handle)(struct _HelpHandler*, IssueLevel, const char*);
-} HelpHandler;
+typedef enum { false = 0, true = 1 } bool;  /**< 简化 bool 类型 */
 
-static int HelpHandler_handle(HelpHandler* h, IssueLevel level, const char* issue) {
-    printf("  [%s] Received issue (level=%d): %s\n", h->name, level, issue);
-    if (level <= h->level) {
-        printf("  [%s] Handled here\n", h->name);
-        return 1;
+/** 日志处理器接口 */
+typedef struct _LogHandler {
+    /** 能处理的最低日志级别（比这个级别低的日志不归我管） */
+    int min_level;
+
+    /** 处理日志的核心方法 */
+    void (*handle)(struct _LogHandler*, int level, const char* message);
+
+    /** 指向链中下一个处理器（NULL 表示链尾） */
+    struct _LogHandler* next;
+} LogHandler;
+
+/**
+ * 处理器处理日志：判断自己能处理就处理，否则传给下一个
+ *
+ * @param level   日志级别
+ * @param msg     日志内容
+ *
+ * 关键：如果 level >= min_level 就处理；否则跳过
+ *       处理完不再传递（这是责任链的两种变体之一）
+ */
+static void LogHandler_handle(LogHandler* h, int level, const char* msg) {
+    if (level >= h->min_level) {
+        /**< 找到了能处理的处理器，打印输出 */
+        printf("  [%s] %s\n", (level == LOG_DEBUG ? "DEBUG" :
+                                level == LOG_INFO  ? "INFO " :
+                                level == LOG_WARN  ? "WARN " :
+                                level == LOG_ERROR ? "ERROR" : "FATAL"), msg);
+        /**< 处理完就结束，不再传递给下一个 */
+        return;
     }
-    if (h->next) {
-        printf("  [%s] Passing to next...\n", h->name);
-        return h->handle(h->next, level, issue);
+
+    /**< 当前处理器处理不了，尝试传给下一个 */
+    if (h->next != NULL) {
+        h->next->handle(h->next, level, msg);
     }
-    printf("  [%s] No handler available!\n", h->name);
-    return 0;
 }
 
-static HelpHandler* HelpHandler_new(const char* name, int level) {
-    HelpHandler* h = calloc(1, sizeof(HelpHandler));
-    h->name = name;
-    h->level = level;
-    h->handle = HelpHandler_handle;
+/** 处理器构造函数 */
+static LogHandler* LogHandler_new(int min_level) {
+    LogHandler* h = calloc(1, sizeof(LogHandler));
+    h->min_level = min_level;
+    h->handle = LogHandler_handle;
     return h;
 }
 
 /* ============================================================================
- * 第二部分：IRQ Handler Chain
+ * 第二部分：PCIe 配置空间访问处理器链
+ *
+ * 场景：对 PCIe 配置空间的访问请求，需要经过多层检查：
+ *       1. 地址范围检查（是否越界）
+ *       2. 权限检查（是否可写）
+ *       3. 实际读/写操作
  * ============================================================================*/
 
-#define IRQ_HANDLED 1
+/** PCIe 配置空间访问请求 */
+typedef struct {
+    uint32_t offset;   /**< 配置空间偏移 */
+    uint32_t value;   /**< 写入的值（或读取的返回值）*/
+    int is_write;      /**< 1=写操作，0=读操作 */
+} PCIeConfigRequest;
 
-typedef int (*IRQHandlerFn)(int irq, void* dev_id);
+typedef enum { REQ_OK = 0, REQ_ERR_RANGE = -1, REQ_ERR_PERM = -2 } ReqResult;
 
-typedef struct _IRQHandlerNode {
-    IRQHandlerFn handler;
-    void* dev_id;
-    char name[32];
-    struct _IRQHandlerNode* next;
-} IRQHandlerNode;
+/** 处理器接口 */
+typedef struct _PCIeHandler PCIeHandler;
+typedef ReqResult (*HandlerFunc)(PCIeHandler*, PCIeConfigRequest*);
 
-typedef struct _IRQChain {
-    IRQHandlerNode* head;
-    int irq;
-    void (*register_handler)(struct _IRQChain*, IRQHandlerFn, void*, const char*);
-    int (*handle_irq)(struct _IRQChain*, int irq);
-} IRQChain;
+struct _PCIeHandler {
+    HandlerFunc handle;             /**< 处理函数 */
+    struct _PCIeHandler* next;      /**< 下一个处理器 */
+    const char* name;              /**< 名称（用于调试）*/
+};
 
-static void IRQChain_register_handler(IRQChain* chain, IRQHandlerFn h, void* dev, const char* name) {
-    IRQHandlerNode* node = malloc(sizeof(IRQHandlerNode));
-    node->handler = h; node->dev_id = dev;
-    strncpy(node->name, name, 31);
-    node->next = chain->head;
-    chain->head = node;
-    printf("  [IRQChain] Registered: %s\n", name);
+/**
+ * 链式处理：遍历链上的每个处理器
+ * 如果某个处理器返回错误，立即停止
+ */
+static ReqResult PCIeHandler_process(PCIeHandler* h, PCIeConfigRequest* req) {
+    ReqResult result = h->handle(h, req);
+    printf("  [Handler: %s] offset=0x%02X %s -> %s\n",
+           h->name,
+           req->offset,
+           req->is_write ? "WRITE" : "READ",
+           result == REQ_OK ? "OK" :
+           result == REQ_ERR_RANGE ? "ERR_RANGE" : "ERR_PERM");
+    if (result != REQ_OK) return result;  /**< 出错就停止传递 */
+    if (h->next) return PCIeHandler_process(h->next, req);  /**< 继续传递 */
+    return REQ_OK;
 }
 
-static int IRQChain_handle_irq(IRQChain* chain, int irq) {
-    printf("  [IRQChain] Handling IRQ %d\n", irq);
-    IRQHandlerNode* node = chain->head;
-    while (node) {
-        int ret = node->handler(irq, node->dev_id);
-        printf("  [IRQChain]   %s: ret=%d\n", node->name, ret);
-        node = node->next;
+/* 三个具体处理器：地址检查 → 权限检查 → 实际操作 */
+static ReqResult range_check_handler(PCIeHandler* base, PCIeConfigRequest* req) {
+    if (req->offset > 0xFF) return REQ_ERR_RANGE;  /**< 配置空间最大 256 字节 */
+    return REQ_OK;  /**< 检查通过，继续下一个处理器 */
+}
+
+static ReqResult permission_check_handler(PCIeHandler* base, PCIeConfigRequest* req) {
+    if (req->is_write && req->offset == 0x04) {
+        printf("    [PermCheck] BAR 寄存器禁止写入！\n");
+        return REQ_ERR_PERM;
     }
-    return IRQ_HANDLED;
+    return REQ_OK;
 }
 
-static IRQChain* IRQChain_new(int irq) {
-    IRQChain* chain = calloc(1, sizeof(IRQChain));
-    chain->irq = irq;
-    chain->register_handler = IRQChain_register_handler;
-    chain->handle_irq = IRQChain_handle_irq;
-    return chain;
-}
-
-typedef struct _PCIEDevice { char name[32]; uint32_t bar0; } PCIEDevice;
-
-static int pcie_irq_handler(int irq, void* dev_id) {
-    PCIEDevice* dev = (PCIEDevice*)dev_id;
-    printf("  [PCIe:%s] IRQ%d handled\n", dev->name, irq);
-    return IRQ_HANDLED;
-}
-
-/* ============================================================================
- * 第三部分：Middleware Chain
- * ============================================================================*/
-
-#define HTTP_OK 200
-#define HTTP_FORBIDDEN 403
-
-typedef struct _HTTPRequest {
-    const char* path;
-    const char* token;
-    int user_id;
-} HTTPRequest;
-
-typedef struct _Middleware {
-    int (*handle)(struct _Middleware*, HTTPRequest*);
-    struct _Middleware* next;
-    const char* name;
-} Middleware;
-
-static int Middleware_dispatch(Middleware* head, HTTPRequest* req) {
-    Middleware* m = head;
-    while (m) {
-        int ret = m->handle(m, req);
-        if (ret != HTTP_OK) return ret;
-        m = m->next;
+static ReqResult read_write_handler(PCIeHandler* base, PCIeConfigRequest* req) {
+    static uint32_t config_space[16] = {0};  /**< 模拟配置空间寄存器 */
+    if (req->is_write) {
+        config_space[req->offset / 4] = req->value;
+        printf("    [R/W] 写入配置空间[0x%02X] = 0x%08X\n", req->offset, req->value);
+    } else {
+        req->value = config_space[req->offset / 4];
+        printf("    [R/W] 读取配置空间[0x%02X] = 0x%08X\n", req->offset, req->value);
     }
-    return HTTP_OK;
-}
-
-typedef struct _AuthMiddleware { Middleware base; } AuthMiddleware;
-static int AuthMiddleware_handle(Middleware* base, HTTPRequest* req) {
-    (void)base;
-    if (!req->token || strlen(req->token) == 0) { printf("  [Auth] No token!\n"); return HTTP_FORBIDDEN; }
-    printf("  [Auth] Token valid\n");
-    return HTTP_OK;
-}
-
-static AuthMiddleware* AuthMiddleware_new(const char* name) {
-    AuthMiddleware* m = calloc(1, sizeof(AuthMiddleware));
-    m->base.handle = (int(*)(Middleware*, HTTPRequest*))AuthMiddleware_handle;
-    m->base.name = name;
-    return m;
+    return REQ_OK;
 }
 
 /* ============================================================================
@@ -152,46 +158,53 @@ static AuthMiddleware* AuthMiddleware_new(const char* name) {
 
 int main(void) {
     printf("=================================================================\n");
-    printf("               Chain of Responsibility — 责任链模式\n");
+    printf("            Chain of Responsibility — 责任链模式\n");
     printf("=================================================================\n\n");
 
-    /* 示例1：Help System */
-    printf("【示例1】Help System — 帮助系统\n");
+    /* -------------------- 示例1：日志处理器链 -------------------- */
+    printf("【示例1】日志处理器链 — 不同级别日志被不同处理器处理\n");
     printf("-----------------------------------------------------------------\n");
-    HelpHandler receptionist = { .name = "Receptionist", .level = LEVEL_1, .handle = HelpHandler_handle };
-    HelpHandler tech = { .name = "TechSupport", .level = LEVEL_2, .handle = HelpHandler_handle };
-    HelpHandler expert = { .name = "Expert", .level = LEVEL_3, .handle = HelpHandler_handle };
-    receptionist.next = &tech; tech.next = &expert;
 
-    printf("  Basic question (level=1):\n");
-    HelpHandler_handle(&receptionist, LEVEL_1, "Where is bathroom?");
-    printf("  Technical question (level=2):\n");
-    HelpHandler_handle(&receptionist, LEVEL_2, "Computer won't boot");
+    /**< 构建链：ConsoleLogger(DEBUG) → FileLogger(WARN) → ServerLogger(ERROR) */
+    LogHandler* console = LogHandler_new(LOG_DEBUG);  /**< 控制台处理所有级别 */
+    console->next = NULL;  /**< 这个链只有一层，DEBUG 及以上都处理 */
 
-    /* 示例2：IRQ Handler Chain */
-    printf("\n【示例2】Linux IRQ Handler Chain — 中断处理链\n");
+    printf("发送 DEBUG 日志:\n");
+    console->handle(console, LOG_DEBUG, "PCIe 链路训练开始");
+    printf("发送 ERROR 日志:\n");
+    console->handle(console, LOG_ERROR, "PCIe BAR 配置失败");
+
+    printf("\n发送 INFO 日志:\n");
+    console->handle(console, LOG_INFO, "设备初始化完成");
+
+    free(console);
+
+    /* -------------------- 示例2：PCIe 配置空间处理器链 -------------------- */
+    printf("\n【示例2】PCIe 配置空间访问链\n");
     printf("-----------------------------------------------------------------\n");
-    IRQChain* irq17 = IRQChain_new(17);
-    PCIEDevice dev1 = { .name = "RTL8111", .bar0 = 0xFEBC0000 };
-    PCIEDevice dev2 = { .name = "X710", .bar0 = 0xFEDF0000 };
-    irq17->register_handler(irq17, pcie_irq_handler, &dev1, "RTL8111");
-    irq17->register_handler(irq17, pcie_irq_handler, &dev2, "X710");
-    printf("\n  IRQ 17 fires:\n");
-    irq17->handle_irq(irq17, 17);
-    free(irq17);
 
-    /* 示例3：Middleware Chain */
-    printf("\n【示例3】Middleware Chain — 中间件链\n");
-    printf("-----------------------------------------------------------------\n");
-    AuthMiddleware* auth = AuthMiddleware_new("Auth");
-    HTTPRequest good_req = { .path = "/api/data", .token = "valid_token", .user_id = 42 };
-    HTTPRequest bad_req = { .path = "/api/admin", .token = "", .user_id = 1 };
-    printf("  Valid request: status=%d\n", Middleware_dispatch(&auth->base, &good_req));
-    printf("  Invalid request: status=%d\n", Middleware_dispatch(&auth->base, &bad_req));
-    free(auth);
+    /**< 构建链：地址范围检查 → 权限检查 → 实际读写 */
+    PCIeHandler h1 = { .handle = range_check_handler, .name = "RangeCheck", .next = NULL };
+    PCIeHandler h2 = { .handle = permission_check_handler, .name = "PermCheck", .next = NULL };
+    PCIeHandler h3 = { .handle = read_write_handler, .name = "ReadWrite", .next = NULL };
+    h1.next = &h2;
+    h2.next = &h3;
+
+    PCIeConfigRequest req1 = { .offset = 0x10, .value = 0xFE400004, .is_write = 1 };
+    printf("请求1: 写入 BAR0 配置寄存器:\n");
+    PCIeHandler_process(&h1, &req1);
+
+    PCIeConfigRequest req2 = { .offset = 0x04, .value = 0xFFFFFFFF, .is_write = 1 };
+    printf("\n请求2: 写入 Command 寄存器:\n");
+    PCIeHandler_process(&h1, &req2);
+
+    PCIeConfigRequest req3 = { .offset = 0x100, .value = 0, .is_write = 0 };
+    printf("\n请求3: 读取超出范围的地址:\n");
+    PCIeHandler_process(&h1, &req3);
 
     printf("\n=================================================================\n");
-    printf(" Chain of Responsibility 模式核心：handle() 决定处理 or 传递\n");
+    printf(" 责任链核心：请求沿链传递，第一个能处理的处理器处理\n");
+    printf(" 嵌入式场景：日志分级处理、中断处理链、请求拦截\n");
     printf("=================================================================\n");
     return 0;
 }

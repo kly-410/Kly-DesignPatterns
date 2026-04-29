@@ -56,7 +56,7 @@ typedef enum {
     TCP_FIN_WAIT_1, TCP_FIN_WAIT_2, TCP_CLOSE_WAIT, TCP_LAST_ACK, TCP_TIME_WAIT
 } TCPState;
 
-typedef enum { TCP_OPEN, TCP_SYN, TCP_SYN_ACK, TCP_ACK, TCP_FIN, TCP_TIMEOUT } TCPEvent;
+typedef enum { TCP_OPEN, TCP_SYN, TCP_SYN_ACK, TCP_ACK, TCP_FIN, TCP_CLOSE, TCP_TIMEOUT } TCPEvent;
 
 static const char* tcp_state_names[] = {
     "CLOSED", "LISTEN", "SYN_SENT", "SYN_RECV", "ESTABLISHED",
